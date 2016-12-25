@@ -17,10 +17,10 @@
 #include <unistd.h>
 
 SUITE(hydrogen_tests)
-void setup() {
+static void setup() {
   _setup();
 }
-void teardown() {
+static void teardown() {
   _teardown();
 }
 
@@ -33,8 +33,131 @@ TEST(info)
   TEST_CHECK(total < __fs.cfg.phys_size);
   return TEST_RES_OK;
 }
-TEST_END(info)
+TEST_END
 
+#if SPIFFS_USE_MAGIC
+TEST(magic)
+{
+  fs_reset_specific(0, 0, 65536*16, 65536, 65536, 256);
+  SPIFFS_unmount(FS);
+
+  TEST_CHECK_EQ(fs_mount_specific(0, 65536*16, 65536, 65536, 256), SPIFFS_OK);
+  SPIFFS_unmount(FS);
+
+  TEST_CHECK_NEQ(fs_mount_specific(0, 65536*16, 65536, 65536, 128), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NOT_A_FS);
+
+  TEST_CHECK_NEQ(fs_mount_specific(4, 65536*16, 65536, 65536, 256), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NOT_A_FS);
+
+  return TEST_RES_OK;
+}
+TEST_END
+
+
+#if SPIFFS_USE_MAGIC_LENGTH
+TEST(magic_length)
+{
+  fs_reset_specific(0, 0, 65536*16, 65536, 65536, 256);
+  SPIFFS_unmount(FS);
+
+  TEST_CHECK_EQ(fs_mount_specific(0, 65536*16, 65536, 65536, 256), SPIFFS_OK);
+  SPIFFS_unmount(FS);
+
+  TEST_CHECK_NEQ(fs_mount_specific(0, 65536*8, 65536, 65536, 256), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NOT_A_FS);
+
+  TEST_CHECK_NEQ(fs_mount_specific(0, 65536*15, 65536, 65536, 256), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NOT_A_FS);
+
+  TEST_CHECK_NEQ(fs_mount_specific(0, 65536*17, 65536, 65536, 256), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NOT_A_FS);
+
+  TEST_CHECK_NEQ(fs_mount_specific(0, 65536*256, 65536, 65536, 256), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NOT_A_FS);
+
+  return TEST_RES_OK;
+}
+TEST_END
+
+#if SPIFFS_SINGLETON==0
+TEST(magic_length_probe)
+{
+  fs_reset_specific(0, 0, 65536*16, 65536, 65536, 256);
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), 65536*16);
+
+  fs_reset_specific(0, 0, 65536*24, 65536, 65536, 256);
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), 65536*24);
+
+  fs_reset_specific(0, 0, 32768*16, 32768, 32768, 128);
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), 32768*16);
+
+  fs_reset_specific(0, 0, 16384*37, 16384, 16384, 128);
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), 16384*37);
+
+  fs_reset_specific(0, 0, 4096*11, 4096, 4096, 256);
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), 4096*11);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  __fs.cfg.log_page_size = 128;
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+  __fs.cfg.log_page_size = 512;
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+  __fs.cfg.log_page_size = 256;
+  __fs.cfg.log_block_size = 8192;
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+  __fs.cfg.log_block_size = 2048;
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+  __fs.cfg.log_block_size = 4096;
+  __fs.cfg.phys_addr += 2;
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  __fs.cfg.phys_addr += 4096*6;
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_TOO_FEW_BLOCKS);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  area_set(4096*0, 0xff, 4096); // "erase" block 0
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), 4096*8);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  area_set(4096*0, 0xff, 4096); // "erase" block 1
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), 4096*8);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  area_set(4096*0, 0xff, 4096); // "erase" block 2
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), 4096*8);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  area_set(4096*0, 0xff, 4096*2); // "erase" block 0 & 1
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  area_set(4096*0, 0xff, 4096*2); // "erase" block 0
+  area_set(4096*0, 0xff, 4096); // "erase" block 2
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  area_set(4096*1, 0xff, 4096*2); // "erase" block 1 & 2
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  area_set(4096*0, 0xff, 4096*8); // "erase" all
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+
+  fs_reset_specific(0, 0, 4096*8, 4096, 4096, 256);
+  area_set(4096*0, 0xdd, 4096*8); // garble all
+  TEST_CHECK_EQ(SPIFFS_probe_fs(&__fs.cfg), SPIFFS_ERR_PROBE_NOT_A_FS);
+
+  return TEST_RES_OK;
+}
+TEST_END
+
+#endif // SPIFFS_SINGLETON==0
+
+#endif // SPIFFS_USE_MAGIC_LENGTH
+
+#endif // SPIFFS_USE_MAGIC
 
 TEST(missing_file)
 {
@@ -42,7 +165,7 @@ TEST(missing_file)
   TEST_CHECK(fd < 0);
   return TEST_RES_OK;
 }
-TEST_END(missing_file)
+TEST_END
 
 
 TEST(bad_fd)
@@ -68,7 +191,7 @@ TEST(bad_fd)
   TEST_CHECK(SPIFFS_errno(FS) == SPIFFS_ERR_BAD_DESCRIPTOR);
   return TEST_RES_OK;
 }
-TEST_END(bad_fd)
+TEST_END
 
 
 TEST(closed_fd)
@@ -97,7 +220,7 @@ TEST(closed_fd)
   TEST_CHECK(SPIFFS_errno(FS) == SPIFFS_ERR_FILE_CLOSED);
   return TEST_RES_OK;
 }
-TEST_END(closed_fd)
+TEST_END
 
 
 TEST(deleted_same_fd)
@@ -131,7 +254,7 @@ TEST(deleted_same_fd)
 
   return TEST_RES_OK;
 }
-TEST_END(deleted_same_fd)
+TEST_END
 
 
 TEST(deleted_other_fd)
@@ -166,7 +289,7 @@ TEST(deleted_other_fd)
 
   return TEST_RES_OK;
 }
-TEST_END(deleted_other_fd)
+TEST_END
 
 
 TEST(file_by_open)
@@ -190,7 +313,7 @@ TEST(file_by_open)
   SPIFFS_close(FS, fd);
   return TEST_RES_OK;
 }
-TEST_END(file_by_open)
+TEST_END
 
 
 TEST(file_by_creat)
@@ -203,7 +326,7 @@ TEST(file_by_creat)
   TEST_CHECK(SPIFFS_errno(FS)==SPIFFS_ERR_CONFLICTING_NAME);
   return TEST_RES_OK;
 }
-TEST_END(file_by_creat)
+TEST_END
 
 TEST(file_by_open_excl)
 {
@@ -223,7 +346,7 @@ TEST(file_by_open_excl)
 
   return TEST_RES_OK;
 }
-TEST_END(file_by_open_excl)
+TEST_END
 
 #if SPIFFS_FILEHDL_OFFSET
 TEST(open_fh_offs)
@@ -257,7 +380,7 @@ TEST(open_fh_offs)
 
   return TEST_RES_OK;
 }
-TEST_END(open_fh_offs)
+TEST_END
 
 #endif //SPIFFS_FILEHDL_OFFSET
 
@@ -289,7 +412,7 @@ TEST(list_dir)
   while ((pe = SPIFFS_readdir(&d, pe))) {
     printf("  %s [%04x] size:%i\n", pe->name, pe->obj_id, pe->size);
     for (i = 0; i < file_cnt; i++) {
-      if (strcmp(files[i], pe->name) == 0) {
+      if (strcmp(files[i], (char *)pe->name) == 0) {
         found++;
         break;
       }
@@ -301,7 +424,7 @@ TEST(list_dir)
 
   return TEST_RES_OK;
 }
-TEST_END(list_dir)
+TEST_END
 
 
 TEST(open_by_dirent) {
@@ -332,7 +455,7 @@ TEST(open_by_dirent) {
   while ((pe = SPIFFS_readdir(&d, pe))) {
     spiffs_file fd = SPIFFS_open_by_dirent(FS, pe, SPIFFS_RDWR, 0);
     TEST_CHECK(fd >= 0);
-    res = read_and_verify_fd(fd, pe->name);
+    res = read_and_verify_fd(fd, (char *)pe->name);
     TEST_CHECK(res == SPIFFS_OK);
     fd = SPIFFS_open_by_dirent(FS, pe, SPIFFS_RDWR, 0);
     TEST_CHECK(fd >= 0);
@@ -356,7 +479,227 @@ TEST(open_by_dirent) {
 
   return TEST_RES_OK;
 
-} TEST_END(open_by_dirent)
+} TEST_END
+
+
+TEST(open_by_page) {
+  int res;
+
+  char *files[4] = {
+      "file1",
+      "file2",
+      "file3",
+      "file4"
+  };
+  int file_cnt = sizeof(files)/sizeof(char *);
+
+  int i;
+  int size = SPIFFS_DATA_PAGE_SIZE(FS);
+
+  for (i = 0; i < file_cnt; i++) {
+    res = test_create_and_write_file(files[i], size, size);
+    TEST_CHECK(res >= 0);
+  }
+
+  spiffs_DIR d;
+  struct spiffs_dirent e;
+  struct spiffs_dirent *pe = &e;
+
+  int found = 0;
+  SPIFFS_opendir(FS, "/", &d);
+  while ((pe = SPIFFS_readdir(&d, pe))) {
+    spiffs_file fd = SPIFFS_open_by_dirent(FS, pe, SPIFFS_RDWR, 0);
+    TEST_CHECK(fd >= 0);
+    res = read_and_verify_fd(fd, (char *)pe->name);
+    TEST_CHECK(res == SPIFFS_OK);
+    fd = SPIFFS_open_by_page(FS, pe->pix, SPIFFS_RDWR, 0);
+    TEST_CHECK(fd >= 0);
+    res = SPIFFS_fremove(FS, fd);
+    TEST_CHECK(res == SPIFFS_OK);
+    SPIFFS_close(FS, fd);
+    found++;
+  }
+  SPIFFS_closedir(&d);
+
+  TEST_CHECK(found == file_cnt);
+
+  found = 0;
+  SPIFFS_opendir(FS, "/", &d);
+  while ((pe = SPIFFS_readdir(&d, pe))) {
+    found++;
+  }
+  SPIFFS_closedir(&d);
+
+  TEST_CHECK(found == 0);
+
+  spiffs_file fd;
+  // test opening a lookup page
+  fd = SPIFFS_open_by_page(FS, 0, SPIFFS_RDWR, 0);
+  TEST_CHECK_LT(fd, 0);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NOT_A_FILE);
+  // test opening a proper page but not being object index
+  fd = SPIFFS_open_by_page(FS, SPIFFS_OBJ_LOOKUP_PAGES(FS)+1, SPIFFS_RDWR, 0);
+  TEST_CHECK_LT(fd, 0);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NOT_A_FILE);
+
+  return TEST_RES_OK;
+} TEST_END
+
+
+static struct {
+  u32_t calls;
+  spiffs_fileop_type op;
+  spiffs_obj_id obj_id;
+  spiffs_page_ix pix;
+} ucb;
+
+void test_cb(spiffs *fs, spiffs_fileop_type op, spiffs_obj_id obj_id, spiffs_page_ix pix) {
+  ucb.calls++;
+  ucb.op = op;
+  ucb.obj_id = obj_id;
+  ucb.pix = pix;
+  //printf("%4i  op:%i objid:%04x pix:%04x\n", ucb.calls, ucb.op, ucb.obj_id, ucb.pix);
+}
+
+TEST(user_callback_basic) {
+  SPIFFS_set_file_callback_func(FS, test_cb);
+  int res;
+  memset(&ucb, 0, sizeof(ucb));
+  spiffs_file fd = SPIFFS_open(FS, "foo", SPIFFS_CREAT | SPIFFS_APPEND | SPIFFS_RDWR, 0);
+  TEST_CHECK_GE(fd, 0);
+  TEST_CHECK_EQ(ucb.calls, 1);
+  TEST_CHECK_EQ(ucb.op, SPIFFS_CB_CREATED);
+  spiffs_stat s;
+  res = SPIFFS_fstat(FS, fd, &s);
+  TEST_CHECK_GE(res, 0);
+  TEST_CHECK_EQ(ucb.obj_id, s.obj_id);
+  TEST_CHECK_EQ(ucb.pix, s.pix);
+
+  res = SPIFFS_write(FS, fd, "howdy partner", 14);
+  TEST_CHECK_GE(res, 0);
+  res = SPIFFS_fflush(FS, fd);
+  TEST_CHECK_GE(res, 0);
+  TEST_CHECK_EQ(ucb.calls, 2);
+  TEST_CHECK_EQ(ucb.op, SPIFFS_CB_UPDATED);
+  TEST_CHECK_EQ(ucb.obj_id, s.obj_id);
+  TEST_CHECK_EQ(ucb.pix, s.pix);
+
+  res = SPIFFS_fremove(FS, fd);
+  TEST_CHECK_GE(res, 0);
+  TEST_CHECK_EQ(ucb.calls, 3);
+  TEST_CHECK_EQ(ucb.op, SPIFFS_CB_DELETED);
+  TEST_CHECK_EQ(ucb.obj_id, s.obj_id);
+  TEST_CHECK_EQ(ucb.pix, s.pix);
+
+  return TEST_RES_OK;
+} TEST_END
+
+
+TEST(user_callback_gc) {
+  SPIFFS_set_file_callback_func(FS, test_cb);
+
+  char name[32];
+  int f;
+  int size = SPIFFS_DATA_PAGE_SIZE(FS);
+  int pages_per_block = SPIFFS_PAGES_PER_BLOCK(FS) - SPIFFS_OBJ_LOOKUP_PAGES(FS);
+  int files = (pages_per_block-1)/2;
+  int res;
+
+  // fill block with files
+  for (f = 0; f < files; f++) {
+    sprintf(name, "file%i", f);
+    res = test_create_and_write_file(name, size, 1);
+    TEST_CHECK(res >= 0);
+  }
+  for (f = 0; f < files; f++) {
+    sprintf(name, "file%i", f);
+    res = read_and_verify(name);
+    TEST_CHECK(res >= 0);
+  }
+  // remove all files in block
+  for (f = 0; f < files; f++) {
+    sprintf(name, "file%i", f);
+    res = SPIFFS_remove(FS, name);
+    TEST_CHECK(res >= 0);
+  }
+
+  memset(&ucb, 0, sizeof(ucb));
+  spiffs_file fd = SPIFFS_open(FS, "foo", SPIFFS_CREAT | SPIFFS_APPEND | SPIFFS_RDWR, 0);
+  TEST_CHECK_GE(fd, 0);
+  TEST_CHECK_EQ(ucb.calls, 1);
+  TEST_CHECK_EQ(ucb.op, SPIFFS_CB_CREATED);
+  spiffs_stat s;
+  res = SPIFFS_fstat(FS, fd, &s);
+  TEST_CHECK_GE(res, 0);
+  TEST_CHECK_EQ(ucb.obj_id, s.obj_id);
+  TEST_CHECK_EQ(ucb.pix, s.pix);
+
+  res = SPIFFS_write(FS, fd, "howdy partner", 14);
+  TEST_CHECK_GE(res, 0);
+  res = SPIFFS_fflush(FS, fd);
+  TEST_CHECK_GE(res, 0);
+  TEST_CHECK_EQ(ucb.calls, 2);
+  TEST_CHECK_EQ(ucb.op, SPIFFS_CB_UPDATED);
+  TEST_CHECK_EQ(ucb.obj_id, s.obj_id);
+  TEST_CHECK_EQ(ucb.pix, s.pix);
+
+  u32_t tot, us;
+  SPIFFS_info(FS, &tot, &us);
+
+  // do a hard gc, should move our file
+  res = SPIFFS_gc(FS, tot-us*2);
+  TEST_CHECK_GE(res, 0);
+
+  TEST_CHECK_GE(res, 0);
+  TEST_CHECK_EQ(ucb.calls, 3);
+  TEST_CHECK_EQ(ucb.op, SPIFFS_CB_UPDATED);
+  TEST_CHECK_EQ(ucb.obj_id, s.obj_id);
+  TEST_CHECK_NEQ(ucb.pix, s.pix);
+
+  res = SPIFFS_fstat(FS, fd, &s);
+  TEST_CHECK_GE(res, 0);
+  TEST_CHECK_EQ(ucb.pix, s.pix);
+
+  res = SPIFFS_fremove(FS, fd);
+  TEST_CHECK_GE(res, 0);
+  TEST_CHECK_EQ(ucb.calls, 4);
+  TEST_CHECK_EQ(ucb.op, SPIFFS_CB_DELETED);
+  TEST_CHECK_EQ(ucb.obj_id, s.obj_id);
+  TEST_CHECK_EQ(ucb.pix, s.pix);
+
+  return TEST_RES_OK;
+} TEST_END
+
+
+TEST(name_too_long) {
+  char name[SPIFFS_OBJ_NAME_LEN*2];
+  memset(name, 0, sizeof(name));
+  int i;
+  for (i = 0; i < SPIFFS_OBJ_NAME_LEN; i++) {
+    name[i] = 'A';
+  }
+
+  TEST_CHECK_LT(SPIFFS_creat(FS, name, 0), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NAME_TOO_LONG);
+
+  TEST_CHECK_LT(SPIFFS_open(FS, name, SPIFFS_CREAT | SPIFFS_TRUNC, 0), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NAME_TOO_LONG);
+
+  TEST_CHECK_LT(SPIFFS_remove(FS, name), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NAME_TOO_LONG);
+
+  spiffs_stat s;
+  TEST_CHECK_LT(SPIFFS_stat(FS, name, &s), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NAME_TOO_LONG);
+
+  TEST_CHECK_LT(SPIFFS_rename(FS, name, "a"), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NAME_TOO_LONG);
+
+  TEST_CHECK_LT(SPIFFS_rename(FS, "a", name), SPIFFS_OK);
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_NAME_TOO_LONG);
+
+  return TEST_RES_OK;
+} TEST_END
 
 
 TEST(rename) {
@@ -382,7 +725,7 @@ TEST(rename) {
   TEST_CHECK(SPIFFS_errno(FS) == SPIFFS_ERR_NOT_FOUND);
 
   return TEST_RES_OK;
-} TEST_END(rename)
+} TEST_END
 
 
 TEST(remove_single_by_path)
@@ -399,7 +742,7 @@ TEST(remove_single_by_path)
 
   return TEST_RES_OK;
 }
-TEST_END(remove_single_by_path)
+TEST_END
 
 
 TEST(remove_single_by_fd)
@@ -419,7 +762,41 @@ TEST(remove_single_by_fd)
 
   return TEST_RES_OK;
 }
-TEST_END(remove_single_by_fd)
+TEST_END
+
+
+TEST(write_cache)
+{
+  int res;
+  spiffs_file fd;
+  u8_t buf[1024*8];
+  u8_t fbuf[1024*8];
+  res = test_create_file("f");
+  TEST_CHECK(res >= 0);
+  fd = SPIFFS_open(FS, "f", SPIFFS_RDWR, 0);
+  TEST_CHECK(fd >= 0);
+  memrand(buf, sizeof(buf));
+  res = SPIFFS_write(FS, fd, buf, SPIFFS_CFG_LOG_PAGE_SZ(FS)/2);
+  TEST_CHECK(res >= 0);
+  res = SPIFFS_write(FS, fd, buf, SPIFFS_CFG_LOG_PAGE_SZ(FS)*2);
+  TEST_CHECK(res >= 0);
+  res = SPIFFS_close(FS, fd);
+  TEST_CHECK(res >= 0);
+
+  fd = SPIFFS_open(FS, "f", SPIFFS_RDWR, 0);
+  TEST_CHECK(fd >= 0);
+  res = SPIFFS_read(FS, fd, fbuf, SPIFFS_CFG_LOG_PAGE_SZ(FS)/2 + SPIFFS_CFG_LOG_PAGE_SZ(FS)*2);
+  TEST_CHECK(res >= 0);
+  TEST_CHECK(0 == memcmp(&buf[0], &fbuf[0], SPIFFS_CFG_LOG_PAGE_SZ(FS)/2));
+  TEST_CHECK(0 == memcmp(&buf[0], &fbuf[SPIFFS_CFG_LOG_PAGE_SZ(FS)/2], SPIFFS_CFG_LOG_PAGE_SZ(FS)*2));
+  res = SPIFFS_close(FS, fd);
+  TEST_CHECK(res >= 0);
+
+  TEST_CHECK(SPIFFS_errno(FS) == SPIFFS_OK);
+
+  return TEST_RES_OK;
+}
+TEST_END
 
 
 TEST(write_big_file_chunks_page)
@@ -433,7 +810,7 @@ TEST(write_big_file_chunks_page)
 
   return TEST_RES_OK;
 }
-TEST_END(write_big_file_chunks_page)
+TEST_END
 
 
 TEST(write_big_files_chunks_page)
@@ -457,7 +834,7 @@ TEST(write_big_files_chunks_page)
 
   return TEST_RES_OK;
 }
-TEST_END(write_big_files_chunks_page)
+TEST_END
 
 
 TEST(write_big_file_chunks_index)
@@ -471,7 +848,7 @@ TEST(write_big_file_chunks_index)
 
   return TEST_RES_OK;
 }
-TEST_END(write_big_file_chunks_index)
+TEST_END
 
 
 TEST(write_big_files_chunks_index)
@@ -495,7 +872,7 @@ TEST(write_big_files_chunks_index)
 
   return TEST_RES_OK;
 }
-TEST_END(write_big_files_chunks_index)
+TEST_END
 
 
 TEST(write_big_file_chunks_huge)
@@ -509,7 +886,7 @@ TEST(write_big_file_chunks_huge)
 
   return TEST_RES_OK;
 }
-TEST_END(write_big_file_chunks_huge)
+TEST_END
 
 
 TEST(write_big_files_chunks_huge)
@@ -533,7 +910,7 @@ TEST(write_big_files_chunks_huge)
 
   return TEST_RES_OK;
 }
-TEST_END(write_big_files_chunks_huge)
+TEST_END
 
 
 TEST(truncate_big_file)
@@ -556,7 +933,7 @@ TEST(truncate_big_file)
 
   return TEST_RES_OK;
 }
-TEST_END(truncate_big_file)
+TEST_END
 
 
 TEST(simultaneous_write) {
@@ -600,7 +977,7 @@ TEST(simultaneous_write) {
 
   return TEST_RES_OK;
 }
-TEST_END(simultaneous_write)
+TEST_END
 
 
 TEST(simultaneous_write_append) {
@@ -646,7 +1023,7 @@ TEST(simultaneous_write_append) {
 
   return TEST_RES_OK;
 }
-TEST_END(simultaneous_write_append)
+TEST_END
 
 TEST(file_uniqueness)
 {
@@ -721,7 +1098,7 @@ TEST(file_uniqueness)
 
   return TEST_RES_OK;
 }
-TEST_END(file_uniqueness)
+TEST_END
 
 int create_and_read_back(int size, int chunk) {
   char *name = "file";
@@ -774,7 +1151,7 @@ TEST(read_chunk_1)
   TEST_CHECK(create_and_read_back(SPIFFS_DATA_PAGE_SIZE(FS)*8, 1) == 0);
   return TEST_RES_OK;
 }
-TEST_END(read_chunk_1)
+TEST_END
 
 
 TEST(read_chunk_page)
@@ -783,7 +1160,7 @@ TEST(read_chunk_page)
       SPIFFS_DATA_PAGE_SIZE(FS)) == 0);
   return TEST_RES_OK;
 }
-TEST_END(read_chunk_page)
+TEST_END
 
 
 TEST(read_chunk_index)
@@ -792,7 +1169,7 @@ TEST(read_chunk_index)
       SPIFFS_DATA_PAGE_SIZE(FS)*(SPIFFS_PAGES_PER_BLOCK(FS) - SPIFFS_OBJ_LOOKUP_PAGES(FS))) == 0);
   return TEST_RES_OK;
 }
-TEST_END(read_chunk_index)
+TEST_END
 
 
 TEST(read_chunk_huge)
@@ -801,7 +1178,7 @@ TEST(read_chunk_huge)
   TEST_CHECK(create_and_read_back(sz, sz) == 0);
   return TEST_RES_OK;
 }
-TEST_END(read_chunk_huge)
+TEST_END
 
 
 TEST(read_beyond)
@@ -843,7 +1220,7 @@ TEST(read_beyond)
 
   return TEST_RES_OK;
 }
-TEST_END(read_beyond)
+TEST_END
 
 
 TEST(bad_index_1) {
@@ -880,7 +1257,7 @@ TEST(bad_index_1) {
   TEST_CHECK(SPIFFS_errno(FS) == SPIFFS_ERR_INDEX_REF_FREE);
 
   return TEST_RES_OK;
-} TEST_END(bad_index_1)
+} TEST_END
 
 
 TEST(bad_index_2) {
@@ -917,7 +1294,7 @@ TEST(bad_index_2) {
   TEST_CHECK(SPIFFS_errno(FS) == SPIFFS_ERR_INDEX_REF_LU);
 
   return TEST_RES_OK;
-} TEST_END(bad_index_2)
+} TEST_END
 
 
 TEST(lseek_simple_modification) {
@@ -957,7 +1334,7 @@ TEST(lseek_simple_modification) {
 
   return TEST_RES_OK;
 }
-TEST_END(lseek_simple_modification)
+TEST_END
 
 
 TEST(lseek_modification_append) {
@@ -997,7 +1374,7 @@ TEST(lseek_modification_append) {
 
   return TEST_RES_OK;
 }
-TEST_END(lseek_modification_append)
+TEST_END
 
 
 TEST(lseek_modification_append_multi) {
@@ -1040,7 +1417,7 @@ TEST(lseek_modification_append_multi) {
 
   return TEST_RES_OK;
 }
-TEST_END(lseek_modification_append_multi)
+TEST_END
 
 
 TEST(lseek_read) {
@@ -1101,7 +1478,7 @@ TEST(lseek_read) {
 
   return TEST_RES_OK;
 }
-TEST_END(lseek_read)
+TEST_END
 
 
 TEST(gc_quick)
@@ -1173,7 +1550,7 @@ TEST(gc_quick)
 
   return TEST_RES_OK;
 }
-TEST_END(gc_quick)
+TEST_END
 
 
 TEST(write_small_file_chunks_1)
@@ -1185,7 +1562,7 @@ TEST(write_small_file_chunks_1)
 
   return TEST_RES_OK;
 }
-TEST_END(write_small_file_chunks_1)
+TEST_END
 
 
 TEST(write_small_files_chunks_1)
@@ -1208,7 +1585,7 @@ TEST(write_small_files_chunks_1)
 
   return TEST_RES_OK;
 }
-TEST_END(write_small_files_chunks_1)
+TEST_END
 
 TEST(write_big_file_chunks_1)
 {
@@ -1221,7 +1598,7 @@ TEST(write_big_file_chunks_1)
 
   return TEST_RES_OK;
 }
-TEST_END(write_big_file_chunks_1)
+TEST_END
 
 TEST(write_big_files_chunks_1)
 {
@@ -1244,7 +1621,7 @@ TEST(write_big_files_chunks_1)
 
   return TEST_RES_OK;
 }
-TEST_END(write_big_files_chunks_1)
+TEST_END
 
 
 TEST(long_run_config_many_small_one_long)
@@ -1258,25 +1635,25 @@ TEST(long_run_config_many_small_one_long)
       },
       {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = LONG
       },
-      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = NORMAL
       },
-      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = LONG
       },
-      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = LONG
       },
-      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = LONG
       },
-      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = LONG
       },
@@ -1286,7 +1663,7 @@ TEST(long_run_config_many_small_one_long)
   TEST_CHECK(res >= 0);
   return TEST_RES_OK;
 }
-TEST_END(long_run_config_many_small_one_long)
+TEST_END
 
 TEST(long_run_config_many_medium)
 {
@@ -1327,7 +1704,7 @@ TEST(long_run_config_many_medium)
   TEST_CHECK(res >= 0);
   return TEST_RES_OK;
 }
-TEST_END(long_run_config_many_medium)
+TEST_END
 
 
 TEST(long_run_config_many_small)
@@ -1335,133 +1712,133 @@ TEST(long_run_config_many_small)
   tfile_conf cfgs[] = {
       {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = LONG
       },
-      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = SHORT
       },
       {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = LONG
       },
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = MODIFIED,      .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = UNTAMPERED,      .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = SHORT
       },
-      {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = MEDIUM
+      {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = SHORT
       },
-      {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = NORMAL
       },
       {   .tsize = EMPTY,     .ttype = UNTAMPERED,    .tlife = SHORT
       },
@@ -1471,13 +1848,13 @@ TEST(long_run_config_many_small)
   TEST_CHECK(res >= 0);
   return TEST_RES_OK;
 }
-TEST_END(long_run_config_many_small)
+TEST_END
 
 
 TEST(long_run)
 {
   tfile_conf cfgs[] = {
-      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = MEDIUM
+      {   .tsize = EMPTY,     .ttype = APPENDED,      .tlife = NORMAL
       },
       {   .tsize = SMALL,     .ttype = REWRITTEN,     .tlife = SHORT
       },
@@ -1502,7 +1879,7 @@ TEST(long_run)
       printf(".");
       fflush(stdout);
     }
-    res = run_file_config(sizeof(cfgs)/sizeof(cfgs[0]), &cfgs[0], 11, 2, 0);
+    res = run_file_config(sizeof(cfgs)/sizeof(cfgs[0]), &cfgs[0], 20, 2, 0);
     TEST_CHECK(res >= 0);
   }
   printf("\n");
@@ -1515,7 +1892,477 @@ TEST(long_run)
 
   return TEST_RES_OK;
 }
-TEST_END(long_run)
+TEST_END
+
+#if SPIFFS_IX_MAP
+TEST(ix_map_basic)
+{
+  // create a scattered file
+  s32_t res;
+  spiffs_file fd1, fd2;
+  fd1 = SPIFFS_open(FS, "1", SPIFFS_O_CREAT | SPIFFS_O_WRONLY, 0);
+  TEST_CHECK_GT(fd1, 0);
+  fd2 = SPIFFS_open(FS, "2", SPIFFS_O_CREAT | SPIFFS_O_WRONLY, 0);
+  TEST_CHECK_GT(fd2, 0);
+
+  u8_t buf[SPIFFS_DATA_PAGE_SIZE(FS)];
+  int i;
+  for (i = 0; i < SPIFFS_CFG_PHYS_SZ(FS) / 4 / SPIFFS_DATA_PAGE_SIZE(FS); i++) {
+    memrand(buf, sizeof(buf));
+    res = SPIFFS_write(FS, fd1, buf, sizeof(buf));
+    TEST_CHECK_GE(res, SPIFFS_OK);
+    memrand(buf, sizeof(buf));
+    res = SPIFFS_write(FS, fd2, buf, sizeof(buf));
+    TEST_CHECK_GE(res, SPIFFS_OK);
+  }
+  res = SPIFFS_close(FS, fd1);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+  res = SPIFFS_close(FS, fd2);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  res = SPIFFS_remove(FS, "2");
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  spiffs_stat s;
+  res = SPIFFS_stat(FS, "1", &s);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+  u32_t size = s.size;
+
+  printf("file created, size: %i..\n", size);
+
+  fd1 = SPIFFS_open(FS, "1", SPIFFS_O_RDONLY, 0);
+  TEST_CHECK_GT(fd1, 0);
+  printf(".. corresponding pix entries: %i\n", SPIFFS_bytes_to_ix_map_entries(FS, size));
+
+  u8_t rd_buf[SPIFFS_CFG_LOG_PAGE_SZ(FS)];
+
+  fd1 = SPIFFS_open(FS, "1", SPIFFS_O_RDONLY, 0);
+  TEST_CHECK_GT(fd1, 0);
+
+  clear_flash_ops_log();
+
+  printf("reading file without memory mapped index\n");
+  while ((res = SPIFFS_read(FS, fd1, rd_buf, sizeof(rd_buf))) == sizeof(rd_buf));
+  TEST_CHECK_GT(res, SPIFFS_OK);
+
+  res = SPIFFS_OK;
+
+  u32_t reads_without_ixmap = get_flash_ops_log_read_bytes();
+  dump_flash_access_stats();
+
+  u32_t crc_non_map_ix = get_spiffs_file_crc_by_fd(fd1);
+
+  TEST_CHECK_EQ(SPIFFS_close(FS, fd1), SPIFFS_OK);
+
+
+  printf("reading file with memory mapped index\n");
+  spiffs_ix_map map;
+  spiffs_page_ix ixbuf[SPIFFS_bytes_to_ix_map_entries(FS, size)];
+
+  fd1 = SPIFFS_open(FS, "1", SPIFFS_O_RDONLY, 0);
+  TEST_CHECK_GT(fd1, 0);
+
+  // map index to memory
+  res = SPIFFS_ix_map(FS, fd1, &map, 0, size, ixbuf);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  clear_flash_ops_log();
+
+  while ((res = SPIFFS_read(FS, fd1, rd_buf, sizeof(rd_buf))) == sizeof(rd_buf));
+  TEST_CHECK_GT(res, SPIFFS_OK);
+  u32_t reads_with_ixmap_pass1 = get_flash_ops_log_read_bytes();
+
+  dump_flash_access_stats();
+
+  u32_t crc_map_ix_pass1 = get_spiffs_file_crc_by_fd(fd1);
+
+  TEST_CHECK_LT(reads_with_ixmap_pass1, reads_without_ixmap);
+
+  TEST_CHECK_EQ(crc_non_map_ix, crc_map_ix_pass1);
+
+  spiffs_page_ix ref_ixbuf[SPIFFS_bytes_to_ix_map_entries(FS, size)];
+  memcpy(ref_ixbuf, ixbuf, sizeof(ixbuf));
+
+  // force a gc by creating small files until full, reordering the index
+  printf("forcing gc, error ERR_FULL %i expected\n", SPIFFS_ERR_FULL);
+  res = SPIFFS_OK;
+  u32_t ix = 10;
+  while (res == SPIFFS_OK) {
+    char name[32];
+    sprintf(name, "%i", ix);
+    res = test_create_and_write_file(name, SPIFFS_CFG_LOG_BLOCK_SZ(FS), SPIFFS_CFG_LOG_BLOCK_SZ(FS));
+    ix++;
+  }
+
+  TEST_CHECK_EQ(SPIFFS_errno(FS), SPIFFS_ERR_FULL);
+
+  // make sure the map array was altered
+  TEST_CHECK_NEQ(0, memcmp(ref_ixbuf, ixbuf, sizeof(ixbuf)));
+
+  TEST_CHECK_GE(SPIFFS_lseek(FS, fd1, 0, SPIFFS_SEEK_SET), SPIFFS_OK);
+
+  clear_flash_ops_log();
+  while ((res = SPIFFS_read(FS, fd1, rd_buf, sizeof(rd_buf))) == sizeof(rd_buf));
+  TEST_CHECK_GT(res, SPIFFS_OK);
+  u32_t reads_with_ixmap_pass2 = get_flash_ops_log_read_bytes();
+
+  TEST_CHECK_EQ(reads_with_ixmap_pass1, reads_with_ixmap_pass2);
+
+  u32_t crc_map_ix_pass2 = get_spiffs_file_crc_by_fd(fd1);
+
+  TEST_CHECK_EQ(crc_map_ix_pass1, crc_map_ix_pass2);
+
+  TEST_CHECK_EQ(SPIFFS_close(FS, fd1), SPIFFS_OK);
+
+  return TEST_RES_OK;
+}
+TEST_END
+
+TEST(ix_map_remap)
+{
+  // create a file, 10 data pages long
+  s32_t res;
+  spiffs_file fd1, fd2;
+  fd1 = SPIFFS_open(FS, "1", SPIFFS_O_CREAT | SPIFFS_O_WRONLY, 0);
+  TEST_CHECK_GT(fd1, 0);
+
+  const int size_pages = 10;
+
+  u8_t buf[SPIFFS_DATA_PAGE_SIZE(FS)];
+  int i;
+  for (i = 0; i < size_pages; i++) {
+    memrand(buf, sizeof(buf));
+    res = SPIFFS_write(FS, fd1, buf, sizeof(buf));
+    TEST_CHECK_GE(res, SPIFFS_OK);
+  }
+  res = SPIFFS_close(FS, fd1);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  spiffs_stat s;
+  res = SPIFFS_stat(FS, "1", &s);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+  u32_t size = s.size;
+
+  printf("file created, size: %i..\n", size);
+
+  fd1 = SPIFFS_open(FS, "1", SPIFFS_O_RDONLY, 0);
+  TEST_CHECK_GT(fd1, 0);
+  printf(".. corresponding pix entries: %i\n", SPIFFS_bytes_to_ix_map_entries(FS, size) + 1);
+  TEST_CHECK_EQ(SPIFFS_bytes_to_ix_map_entries(FS, size), size_pages + 1);
+
+  // map index to memory
+  // move around, check validity
+  const int entries = SPIFFS_bytes_to_ix_map_entries(FS, size/2);
+  spiffs_ix_map map;
+  // add one extra for stack safeguarding
+  spiffs_page_ix ixbuf[entries+1];
+  spiffs_page_ix ixbuf_ref[entries+1];
+  const spiffs_page_ix canary = (spiffs_page_ix)0x87654321;
+  memset(ixbuf, 0xee, sizeof(ixbuf));
+  ixbuf[entries] = canary;
+
+  res = SPIFFS_ix_map(FS, fd1, &map, 0, size/2, ixbuf);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+  }
+  printf("\n");
+
+  memcpy(ixbuf_ref, ixbuf, sizeof(spiffs_page_ix) * entries);
+
+  TEST_CHECK_EQ(SPIFFS_ix_remap(FS, fd1, 0), SPIFFS_OK);
+  TEST_CHECK_EQ(canary, ixbuf[entries]);
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+  }
+  printf("\n");
+  TEST_CHECK_EQ(0, memcmp(ixbuf_ref, ixbuf, sizeof(spiffs_page_ix) * entries));
+
+  TEST_CHECK_EQ(SPIFFS_ix_remap(FS, fd1, SPIFFS_DATA_PAGE_SIZE(FS)), SPIFFS_OK);
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+  }
+  printf("\n");
+  TEST_CHECK_EQ(canary, ixbuf[entries]);
+  TEST_CHECK_EQ(0, memcmp(&ixbuf_ref[1], ixbuf, sizeof(spiffs_page_ix) * (entries-1)));
+
+
+  TEST_CHECK_EQ(SPIFFS_ix_remap(FS, fd1, 0), SPIFFS_OK);
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+  }
+  printf("\n");
+  TEST_CHECK_EQ(canary, ixbuf[entries]);
+  TEST_CHECK_EQ(0, memcmp(ixbuf_ref, ixbuf, sizeof(spiffs_page_ix) * entries));
+
+  TEST_CHECK_EQ(SPIFFS_ix_remap(FS, fd1, size/2), SPIFFS_OK);
+  TEST_CHECK_EQ(canary, ixbuf[entries]);
+
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf_ref[i]);
+  }
+  printf("\n");
+
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+  }
+  printf("\n");
+
+  int matches = 0;
+  for (i = 0; i < entries; i++) {
+    int j;
+    for (j = 0; j < entries; j++) {
+      if (ixbuf_ref[i] == ixbuf[i]) {
+        matches++;
+      }
+    }
+  }
+  TEST_CHECK_LE(matches, 1);
+
+  return TEST_RES_OK;
+}
+TEST_END
+
+TEST(ix_map_partial)
+{
+  // create a file, 10 data pages long
+  s32_t res;
+  spiffs_file fd, fd2;
+  fd = SPIFFS_open(FS, "1", SPIFFS_O_CREAT | SPIFFS_O_WRONLY, 0);
+  TEST_CHECK_GT(fd, 0);
+
+  const int size_pages = 10;
+
+  u8_t buf[SPIFFS_DATA_PAGE_SIZE(FS)];
+  int i;
+  for (i = 0; i < size_pages; i++) {
+    memrand(buf, sizeof(buf));
+    res = SPIFFS_write(FS, fd, buf, sizeof(buf));
+    TEST_CHECK_GE(res, SPIFFS_OK);
+  }
+  res = SPIFFS_close(FS, fd);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  spiffs_stat s;
+  res = SPIFFS_stat(FS, "1", &s);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+  u32_t size = s.size;
+
+  printf("file created, size: %i..\n", size);
+
+  const u32_t crc_unmapped = get_spiffs_file_crc("1");
+
+  fd = SPIFFS_open(FS, "1", SPIFFS_O_RDONLY, 0);
+  TEST_CHECK_GT(fd, 0);
+
+  // map index to memory
+  const int entries = SPIFFS_bytes_to_ix_map_entries(FS, size/2);
+  spiffs_ix_map map;
+  spiffs_page_ix ixbuf[entries];
+  spiffs_page_ix ixbuf_ref[entries];
+
+  printf("map 0-50%%\n");
+  res = SPIFFS_ix_map(FS, fd, &map, 0, size/2, ixbuf);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  const u32_t crc_mapped_beginning = get_spiffs_file_crc_by_fd(fd);
+  TEST_CHECK_EQ(crc_mapped_beginning, crc_unmapped);
+
+  printf("map 25-75%%\n");
+  res = SPIFFS_ix_remap(FS, fd, size/4);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  const u32_t crc_mapped_middle = get_spiffs_file_crc_by_fd(fd);
+  TEST_CHECK_EQ(crc_mapped_middle, crc_unmapped);
+
+  printf("map 50-100%%\n");
+  res = SPIFFS_ix_remap(FS, fd, size/2);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  const u32_t crc_mapped_end = get_spiffs_file_crc_by_fd(fd);
+  TEST_CHECK_EQ(crc_mapped_end, crc_unmapped);
+
+  return TEST_RES_OK;
+}
+TEST_END
+
+TEST(ix_map_beyond)
+{
+  // create a file, 10 data pages long
+  s32_t res;
+  spiffs_file fd;
+  fd = SPIFFS_open(FS, "1", SPIFFS_O_CREAT | SPIFFS_O_WRONLY, 0);
+  TEST_CHECK_GT(fd, 0);
+
+  const int size_pages = 10;
+
+  u8_t buf[SPIFFS_DATA_PAGE_SIZE(FS)];
+  int i;
+  for (i = 0; i < size_pages; i++) {
+    memrand(buf, sizeof(buf));
+    res = SPIFFS_write(FS, fd, buf, sizeof(buf));
+    TEST_CHECK_GE(res, SPIFFS_OK);
+  }
+  res = SPIFFS_close(FS, fd);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  spiffs_stat s;
+  res = SPIFFS_stat(FS, "1", &s);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+  u32_t size = s.size;
+
+  printf("file created, size: %i..\n", size);
+
+  // map index to memory
+  fd = SPIFFS_open(FS, "1", SPIFFS_O_RDWR | SPIFFS_O_APPEND, 0);
+  TEST_CHECK_GT(fd, 0);
+
+  const int entries = SPIFFS_bytes_to_ix_map_entries(FS, size);
+  spiffs_ix_map map;
+  spiffs_page_ix ixbuf[entries];
+  printf("map has %i entries\n", entries);
+
+  printf("map 100-200%%\n");
+  res = SPIFFS_ix_map(FS, fd, &map, size, size, ixbuf);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+
+  printf("make sure map is empty\n");
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+    TEST_CHECK_EQ(ixbuf[i], 0);
+  }
+  printf("\n");
+
+  printf("elongate by 100%%\n");
+  for (i = 0; i < size_pages; i++) {
+    memrand(buf, sizeof(buf));
+    res = SPIFFS_write(FS, fd, buf, sizeof(buf));
+    TEST_CHECK_GE(res, SPIFFS_OK);
+  }
+  TEST_CHECK_GE(SPIFFS_fflush(FS, fd), SPIFFS_OK);
+
+  res = SPIFFS_stat(FS, "1", &s);
+  TEST_CHECK_GE(res, SPIFFS_OK);
+  size = s.size;
+  printf("file elongated, size: %i..\n", size);
+
+  printf("make sure map is full but for one element\n");
+  int zeroed = 0;
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+    if (ixbuf[i] == 0) zeroed++;
+  }
+  printf("\n");
+  TEST_CHECK_LE(zeroed, 1);
+
+  printf("remap till end\n");
+  TEST_CHECK_EQ(SPIFFS_ix_remap(FS, fd, size), SPIFFS_OK);
+
+  printf("make sure map is empty but for one element\n");
+  int nonzero = 0;
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+    if (ixbuf[i]) nonzero++;
+  }
+  printf("\n");
+  TEST_CHECK_LE(nonzero, 1);
+
+  printf("elongate again, by other fd\n");
+
+  spiffs_file fd2 = SPIFFS_open(FS, "1", SPIFFS_O_WRONLY | SPIFFS_O_APPEND, 0);
+  TEST_CHECK_GT(fd2, 0);
+
+  for (i = 0; i < size_pages; i++) {
+    memrand(buf, sizeof(buf));
+    res = SPIFFS_write(FS, fd2, buf, sizeof(buf));
+    TEST_CHECK_GE(res, SPIFFS_OK);
+  }
+  TEST_CHECK_GE(SPIFFS_close(FS, fd2), SPIFFS_OK);
+
+  printf("make sure map is full but for one element\n");
+  zeroed = 0;
+  for (i = 0; i < entries; i++) {
+    printf("%04x ", ixbuf[i]);
+    if (ixbuf[i] == 0) zeroed++;
+  }
+  printf("\n");
+  TEST_CHECK_LE(zeroed, 1);
+
+  return TEST_RES_OK;
+}
+TEST_END
+
+#endif // SPIFFS_IX_MAP
+
+SUITE_TESTS(hydrogen_tests)
+  ADD_TEST(info)
+#if SPIFFS_USE_MAGIC
+  ADD_TEST(magic)
+#if SPIFFS_USE_MAGIC_LENGTH
+  ADD_TEST(magic_length)
+#if SPIFFS_SINGLETON==0
+  ADD_TEST(magic_length_probe)
+#endif
+#endif
+#endif
+  ADD_TEST(missing_file)
+  ADD_TEST(bad_fd)
+  ADD_TEST(closed_fd)
+  ADD_TEST(deleted_same_fd)
+  ADD_TEST(deleted_other_fd)
+  ADD_TEST(file_by_open)
+  ADD_TEST(file_by_creat)
+  ADD_TEST(file_by_open_excl)
+#if SPIFFS_FILEHDL_OFFSET
+  ADD_TEST(open_fh_offs)
+#endif
+  ADD_TEST(list_dir)
+  ADD_TEST(open_by_dirent)
+  ADD_TEST(open_by_page)
+  ADD_TEST(user_callback_basic)
+  ADD_TEST(user_callback_gc)
+  ADD_TEST(name_too_long)
+  ADD_TEST(rename)
+  ADD_TEST(remove_single_by_path)
+  ADD_TEST(remove_single_by_fd)
+  ADD_TEST(write_cache)
+  ADD_TEST(write_big_file_chunks_page)
+  ADD_TEST(write_big_files_chunks_page)
+  ADD_TEST(write_big_file_chunks_index)
+  ADD_TEST(write_big_files_chunks_index)
+  ADD_TEST(write_big_file_chunks_huge)
+  ADD_TEST(write_big_files_chunks_huge)
+  ADD_TEST(truncate_big_file)
+  ADD_TEST(simultaneous_write)
+  ADD_TEST(simultaneous_write_append)
+  ADD_TEST(file_uniqueness)
+  ADD_TEST(read_chunk_1)
+  ADD_TEST(read_chunk_page)
+  ADD_TEST(read_chunk_index)
+  ADD_TEST(read_chunk_huge)
+  ADD_TEST(read_beyond)
+  ADD_TEST(bad_index_1)
+  ADD_TEST(bad_index_2)
+  ADD_TEST(lseek_simple_modification)
+  ADD_TEST(lseek_modification_append)
+  ADD_TEST(lseek_modification_append_multi)
+  ADD_TEST(lseek_read)
+  ADD_TEST(gc_quick)
+  ADD_TEST(write_small_file_chunks_1)
+  ADD_TEST(write_small_files_chunks_1)
+  ADD_TEST(write_big_file_chunks_1)
+  ADD_TEST(write_big_files_chunks_1)
+  ADD_TEST(long_run_config_many_small_one_long)
+  ADD_TEST(long_run_config_many_medium)
+  ADD_TEST(long_run_config_many_small)
+  ADD_TEST(long_run)
+#if SPIFFS_IX_MAP
+  ADD_TEST(ix_map_basic)
+  ADD_TEST(ix_map_remap)
+  ADD_TEST(ix_map_partial)
+  ADD_TEST(ix_map_beyond)
+#endif
 
 SUITE_END(hydrogen_tests)
 

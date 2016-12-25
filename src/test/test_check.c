@@ -18,10 +18,10 @@
 
 
 SUITE(check_tests)
-void setup() {
+static void setup() {
   _setup();
 }
-void teardown() {
+static void teardown() {
   _teardown();
 }
 
@@ -50,7 +50,7 @@ TEST(evil_write) {
   TEST_CHECK(res >= 0);
 
   return TEST_RES_OK;
-} TEST_END(evil_write)
+} TEST_END
 
 
 TEST(lu_check1) {
@@ -87,7 +87,7 @@ TEST(lu_check1) {
   SPIFFS_check(FS);
 
   return TEST_RES_OK;
-} TEST_END(lu_check1)
+} TEST_END
 
 
 TEST(page_cons1) {
@@ -113,7 +113,7 @@ TEST(page_cons1) {
   u32_t addr = SPIFFS_PAGE_TO_PADDR(FS, pix) + sizeof(spiffs_page_object_ix_header) + 0 * sizeof(spiffs_page_ix);
   spiffs_page_ix bad_pix_ref = 0x55;
   area_write(addr, (u8_t*)&bad_pix_ref, sizeof(spiffs_page_ix));
-  area_write(addr+2, (u8_t*)&bad_pix_ref, sizeof(spiffs_page_ix));
+  area_write(addr + sizeof(spiffs_page_ix), (u8_t*)&bad_pix_ref, sizeof(spiffs_page_ix));
 
   // delete all cache
 #if SPIFFS_CACHE
@@ -127,7 +127,7 @@ TEST(page_cons1) {
   TEST_CHECK(res >= 0);
 
   return TEST_RES_OK;
-} TEST_END(page_cons1)
+} TEST_END
 
 
 TEST(page_cons2) {
@@ -172,7 +172,7 @@ TEST(page_cons2) {
   TEST_CHECK(res >= 0);
 
   return TEST_RES_OK;
-} TEST_END(page_cons2)
+} TEST_END
 
 
 
@@ -213,7 +213,7 @@ TEST(page_cons3) {
   TEST_CHECK(res >= 0);
 
   return TEST_RES_OK;
-} TEST_END(page_cons3)
+} TEST_END
 
 
 TEST(page_cons_final) {
@@ -254,7 +254,7 @@ TEST(page_cons_final) {
   TEST_CHECK(res >= 0);
 
   return TEST_RES_OK;
-} TEST_END(page_cons_final)
+} TEST_END
 
 
 TEST(index_cons1) {
@@ -295,7 +295,7 @@ TEST(index_cons1) {
   TEST_CHECK(res >= 0);
 
   return TEST_RES_OK;
-} TEST_END(index_cons1)
+} TEST_END
 
 
 TEST(index_cons2) {
@@ -335,7 +335,7 @@ TEST(index_cons2) {
   TEST_CHECK(res >= 0);
 
   return TEST_RES_OK;
-} TEST_END(index_cons2)
+} TEST_END
 
 
 TEST(index_cons3) {
@@ -376,7 +376,7 @@ TEST(index_cons3) {
   TEST_CHECK(res >= 0);
 
   return TEST_RES_OK;
-} TEST_END(index_cons3)
+} TEST_END
 
 TEST(index_cons4) {
   int size = SPIFFS_DATA_PAGE_SIZE(FS)*SPIFFS_PAGES_PER_BLOCK(FS);
@@ -411,8 +411,17 @@ TEST(index_cons4) {
   SPIFFS_check(FS);
 
   return TEST_RES_OK;
-} TEST_END(index_cons4)
+} TEST_END
 
-
-
+SUITE_TESTS(check_tests)
+  ADD_TEST(evil_write)
+  ADD_TEST(lu_check1)
+  ADD_TEST(page_cons1)
+  ADD_TEST(page_cons2)
+  ADD_TEST(page_cons3)
+  ADD_TEST(page_cons_final)
+  ADD_TEST(index_cons1)
+  ADD_TEST(index_cons2)
+  ADD_TEST(index_cons3)
+  ADD_TEST(index_cons4)
 SUITE_END(check_tests)

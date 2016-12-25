@@ -37,8 +37,8 @@ typedef enum {
 } tfile_type;
 
 typedef enum {
-  SHORT = 4,
-  NORMAL = 20,
+  SHORT = 3,
+  NORMAL = 15,
   LONG = 100,
 } tfile_life;
 
@@ -55,7 +55,6 @@ typedef struct  {
   char name[32];
 } tfile;
 
-
 void fs_reset();
 void fs_reset_specific(u32_t addr_offset, u32_t phys_addr, u32_t phys_size,
     u32_t phys_sector_size,
@@ -63,6 +62,14 @@ void fs_reset_specific(u32_t addr_offset, u32_t phys_addr, u32_t phys_size,
 s32_t fs_mount_specific(u32_t phys_addr, u32_t phys_size,
     u32_t phys_sector_size,
     u32_t log_block_size, u32_t log_page_size);
+void fs_mount_dump(char *fname,
+    u32_t addr_offset, u32_t phys_addr, u32_t phys_size,
+        u32_t phys_sector_size,
+        u32_t log_block_size, u32_t log_page_size);
+
+void fs_store_dump(char *fname);
+void fs_load_dump(char *fname);
+
 void fs_set_addr_offset(u32_t offset);
 int read_and_verify(char *name);
 int read_and_verify_fd(spiffs_file fd, char *name);
@@ -71,6 +78,7 @@ void hexdump(u32_t addr, u32_t len);
 char *make_test_fname(const char *name);
 void clear_test_path();
 void area_write(u32_t addr, u8_t *buf, u32_t size);
+void area_set(u32_t addr, u8_t d, u32_t size);
 void area_read(u32_t addr, u8_t *buf, u32_t size);
 void dump_erase_counts(spiffs *fs);
 void dump_flash_access_stats();
@@ -80,15 +88,20 @@ u32_t get_flash_ops_log_read_bytes();
 u32_t get_flash_ops_log_write_bytes();
 void invoke_error_after_read_bytes(u32_t b, char once_only);
 void invoke_error_after_write_bytes(u32_t b, char once_only);
+void fs_set_validate_flashing(int i);
 
 void memrand(u8_t *b, int len);
 int test_create_file(char *name);
 int test_create_and_write_file(char *name, int size, int chunk_size);
+u32_t get_spiffs_file_crc_by_fd(spiffs_file fd);
+u32_t get_spiffs_file_crc(char *name);
 void _setup();
 void _setup_test_only();
 void _teardown();
 u32_t tfile_get_size(tfile_size s);
 int run_file_config(int cfg_count, tfile_conf* cfgs, int max_runs, int max_concurrent_files, int dbg);
 
+void test_lock(spiffs *fs);
+void test_unlock(spiffs *fs);
 
 #endif /* TEST_SPIFFS_H_ */

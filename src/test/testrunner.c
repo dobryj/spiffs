@@ -65,7 +65,7 @@ static char check_excl_filter(char *name) {
   return strstr(name, test_main.excl_filter) == 0 ? 1 : 0;
 }
 
-void add_test(test_f f, char *name, void (*setup)(test *t), void (*teardown)(test *t)) {
+void _add_test(test_f f, char *name, void (*setup)(test *t), void (*teardown)(test *t)) {
   if (f == 0) return;
   if (!check_spec(name)) return;
   if (!check_incl_filter(name)) return;
@@ -168,7 +168,6 @@ int run_tests(int argc, char **args) {
     i++;
     int res = cur_t->f(cur_t);
     cur_t->test_result = res;
-    cur_t->teardown(cur_t);
     int fd = res == TEST_RES_OK ? fd_success : fd_bad;
     write(fd, cur_t->name, strlen(cur_t->name));
     write(fd, "\n", 1);
@@ -190,6 +189,7 @@ int run_tests(int argc, char **args) {
       add_res(cur_t, &test_main.stopped, &test_main.stopped_last);
       break;
     }
+    cur_t->teardown(cur_t);
     free(cur_t);
     cur_t = next_test;
   }
